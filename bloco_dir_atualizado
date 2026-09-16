@@ -1,0 +1,108 @@
+# BLOCO CORRIGIDO PARA LOCALIZAR A PASTA DIARIO-DE-CAMPO
+# Substitua o bloco atual de BASE_DIR / DATA_DIR por este trecho.
+
+from pathlib import Path
+import os
+import streamlit as st
+
+BASE_DIR = Path(__file__).resolve().parent
+USER_HOME = Path.home()
+
+
+def normalizar_caminho_pasta(valor: str) -> Path | None:
+    """Converte o texto informado em Path e valida se a pasta existe."""
+    if not valor:
+        return None
+
+    texto = str(valor).strip().strip('"').strip("'")
+    if not texto:
+        return None
+
+    caminho = Path(texto).expanduser()
+    return caminho.resolve() if caminho.is_dir() else None
+
+
+def localizar_pasta_diario_de_campo() -> Path | None:
+    """
+    Localiza Diario-de-Campo sem manter o nome do usuario fixo.
+
+    Prioridade:
+    1. Variavel de ambiente DEEP_FIELD_DATA_DIR.
+    2. Pastas comuns do OneDrive corporativo.
+    3. Pasta junto ao arquivo app.py.
+    """
+    caminho_ambiente = normalizar_caminho_pasta(
+        os.getenv("DEEP_FIELD_DATA_DIR", "")
+    )
+    if caminho_ambiente:
+        return caminho_ambiente
+
+    candidatos = [
+        USER_HOME / "OneDrive - DEEPESSOAS" / "Diario-de-Campo",
+        USER_HOME / "OneDrive - DEEPESSOAS" / "Diario de Campo",
+        USER_HOME / "OneDrive" / "Diario-de-Campo",
+        USER_HOME / "OneDrive" / "Diario de Campo",
+        USER_HOME / "Documents" / "Diario-de-Campo",
+        USER_HOME / "Documentos" / "Diario-de-Campo",
+        BASE_DIR / "Diario-de-Campo",
+        BASE_DIR / "Diario de Campo",
+    ]
+
+    for candidato in candidatos:
+        if candidato.is_dir():
+            return candidato.resolve()
+
+    # Procura somente nas pastas OneDrive do usuario, sem varrer o disco inteiro.
+    try:
+        pastas_onedrive = [
+            pasta
+            for pasta in USER_HOME.iterdir()
+            if pasta.is_dir() and "ONEDRIVE" in pasta.name.upper()
+        ]
+
+        for pasta_onedrive in pastas_onedrive:
+            for nome in ("Diario-de-Campo", "Diario de Campo"):
+                candidato = pasta_onedrive / nome
+                if candidato.is_dir():
+                    return candidato.resolve()
+    except OSError:
+        pass
+
+    return None
+
+
+DATA_DIR = localizar_pasta_diario_de_campo()
+
+# Se a pasta nao for encontrada, permite configurar pela propria tela.
+if DATA_DIR is None:
+    st.error(
+        "A pasta Diario-de-Campo nao foi localizada automaticamente."
+    )
+    st.info(
+        "Informe abaixo o caminho real da pasta sincronizada pelo OneDrive."
+    )
+
+    caminho_manual = st.text_input(
+        "Caminho da pasta Diario-de-Campo",
+        placeholder=(
+            r"C:\Users\Usuario\OneDrive - DEEPESSOAS\Diario-de-Campo"
+        ),
+        key="deep_field_data_dir_manual",
+    )
+
+    pasta_manual = normalizar_caminho_pasta(caminho_manual)
+
+    if caminho_manual and pasta_manual is None:
+        st.warning(
+            "O caminho informado nao existe ou nao corresponde a uma pasta."
+        )
+
+    if pasta_manual:
+        DATA_DIR = pasta_manual
+        st.success(f"Pasta localizada: {DATA_DIR}")
+
+    if DATA_DIR is None:
+        st.stop()
+
+# Exibe o caminho efetivamente utilizado para facilitar a conferencia.
+st.caption(f"Pasta de dados: {DATA_DIR}")
